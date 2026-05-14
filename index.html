@@ -1096,9 +1096,15 @@ function ShakeHint({ onDismiss }) {
 }
 
 function EntryPill({ x, y, label, accent, onOpen, onDismiss }) {
+  // stopPropagation on mousedown: otherwise the event bubbles to the canvas
+  // div's onMouseDown handler, which would dismissEntry() and unmount the pill
+  // before the click event reaches the button — causing the click to silently
+  // do nothing.
+  const stop = (e) => e.stopPropagation();
   return (
     <div
       className="fixed z-50"
+      onMouseDown={stop}
       style={{
         left: x + 14,
         top: y + 14,
@@ -1123,6 +1129,109 @@ function EntryPill({ x, y, label, accent, onOpen, onDismiss }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CompareView({ scenario, loading, onPick, onCancel }) {
+  // Two preview cards side-by-side, sized to the scenario's natural aspect.
+  // 0.55 of the canvas frame keeps both cards visible in a typical viewport.
+  const cardW = Math.min(Math.round(scenario.frameMax * 0.55), 340);
+  const cardH = Math.round(cardW / scenario.aspect);
+  const meta = [
+    { tag: 'Hierarchy', concept: scenario.concept1, V: scenario.variation1, key: 'v1' },
+    { tag: 'Color story', concept: scenario.concept2, V: scenario.variation2, key: 'v2' },
+  ];
+  return (
+    <div className="flex flex-col items-center gap-4 max-w-full animate-slideup">
+      <div className="text-center px-4">
+        <div className="flex items-center justify-center gap-2 text-[14px] font-semibold text-ink-900">
+          <Sparkle size={16} className="text-brand-600" />
+          {loading ? COPY.generating : 'Pick a beautified version'}
+        </div>
+        <div className="text-[12px] text-ink-500 mt-0.5">
+          {loading ? 'Generating two curated takes…' : 'Click whichever you prefer to apply it to your design.'}
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row items-stretch gap-5">
+        {meta.map((m, i) => (
+          <button
+            key={m.key}
+            type="button"
+            disabled={loading}
+            onClick={() => onPick(m.key)}
+            className={`group flex flex-col rounded-xl bg-white shadow-soft border-2 transition overflow-hidden text-left ${loading ? 'border-ink-100 cursor-default' : 'border-ink-100 hover:border-brand-500 hover:shadow-pop'}`}
+            style={{width: cardW}}
+          >
+            <div className="bg-white relative shrink-0" style={{width: cardW, height: cardH}}>
+              {loading ? (
+                <div className="w-full h-full shimmer-bg animate-shimmer" />
+              ) : (
+                <div className="absolute inset-0 animate-fadein">
+                  <m.V />
+                </div>
+              )}
+            </div>
+            <div className="p-3.5">
+              <div className="text-[10px] uppercase tracking-widest text-ink-500">Variation {i+1}</div>
+              <div className="text-[13px] font-semibold text-ink-900 mt-0.5">{m.tag}</div>
+              {loading ? (
+                <>
+                  <div className="h-2.5 w-full rounded shimmer-bg animate-shimmer mt-2" />
+                  <div className="h-2.5 w-3/4 rounded shimmer-bg animate-shimmer mt-1.5" />
+                </>
+              ) : (
+                <div className="text-[11px] text-ink-600 mt-1.5 leading-snug">{m.concept}</div>
+              )}
+            </div>
+            {!loading && (
+              <div className="mx-3 mb-3 px-3 py-2 rounded-md bg-brand-50 text-brand-700 text-[12px] font-semibold text-center group-hover:bg-brand-600 group-hover:text-white transition">
+                Apply this version
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {!loading && (
+        <button onClick={onCancel} className="text-[12px] text-ink-500 hover:text-ink-800 px-3 py-1.5 underline underline-offset-2 decoration-ink-300">
+          Cancel — keep original
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FeedbackBar({ onSubmit }) {
+  const [feedback, setFeedback] = useState(null);
+  const [thanks, setThanks] = useState(false);
+  const submit = (v) => {
+    setFeedback(v);
+    setThanks(true);
+    onSubmit && onSubmit(v);
+    setTimeout(() => setThanks(false), 1800);
+  };
+  return (
+    <div className="mt-2 animate-slideup flex items-center gap-2 bg-white rounded-full shadow-soft border border-ink-100 px-3 py-1.5">
+      {thanks ? (
+        <div className="text-[12px] text-ink-700 flex items-center gap-2">
+          <span className="w-4 h-4 rounded-full bg-green-500 text-white grid place-items-center text-[10px]">✓</span>
+          {COPY.feedbackThanks}
+        </div>
+      ) : (
+        <>
+          <div className="text-[12px] text-ink-700 pr-1">{COPY.feedbackPrompt}</div>
+          <button onClick={() => submit('up')}
+                  className={`h-7 px-2 rounded-md text-[11px] flex items-center gap-1 border ${feedback === 'up' ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-ink-200 hover:bg-ink-50 text-ink-700'}`}>
+            <ThumbUp size={12} /> {COPY.feedbackYes}
+          </button>
+          <button onClick={() => submit('down')}
+                  className={`h-7 px-2 rounded-md text-[11px] flex items-center gap-1 border ${feedback === 'down' ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-ink-200 hover:bg-ink-50 text-ink-700'}`}>
+            <ThumbDown size={12} /> {COPY.feedbackNo}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -1409,7 +1518,7 @@ function App() {
   const [entryPos, setEntryPos] = useState(null);
   const [entryRearmAt, setEntryRearmAt] = useState(0);
   const [ripple, setRipple] = useState(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [applied, setApplied] = useState('original');
   const [showHint, setShowHint] = useState(false);
@@ -1471,30 +1580,31 @@ function App() {
     return () => clearTimeout(id);
   }, [ripple]);
 
-  const openPanel = () => {
+  const openCompare = () => {
     setEntryPos(null);
-    setPanelOpen(true);
-    const autoApply = (t.autoApply === 'v1' || t.autoApply === 'v2') ? t.autoApply : null;
+    setCompareMode(true);
+    setApplied('original');
     const delayMs = skipSkeleton ? 0 : (t.skeletonMs ?? SHAKE_CONFIG.SKELETON_MS);
     if (delayMs === 0) {
-      if (autoApply) setApplied(autoApply);
+      setLoading(false);
     } else {
       setLoading(true);
-      setTimeout(() => {
-        setLoading(false);
-        if (autoApply) setApplied(autoApply);
-      }, delayMs);
+      setTimeout(() => setLoading(false), delayMs);
     }
   };
   const dismissEntry = () => {
     setEntryPos(null);
     setEntryRearmAt(Date.now() + SHAKE_CONFIG.ENTRY_REARM_MS);
   };
-  const closePanel = () => {
-    setPanelOpen(false);
+  const pickFromCompare = (v) => {
+    setApplied(v);
+    setCompareMode(false);
   };
-  const applyVariation = (v) => setApplied(v);
-  const undo = () => setApplied('original');
+  const cancelCompare = () => {
+    setCompareMode(false);
+    setLoading(false);
+  };
+  const undo = () => { setApplied('original'); setCompareMode(false); };
 
   const onCanvasMouseDown = (e) => {
     if (entryPos) dismissEntry();
@@ -1509,7 +1619,7 @@ function App() {
   };
   const onReset = () => {
     setApplied('original');
-    setPanelOpen(false);
+    setCompareMode(false);
     setEntryPos(null);
     setLoading(false);
     setShowHint(false);
@@ -1533,22 +1643,44 @@ function App() {
           className="flex-1 relative overflow-hidden"
           style={{ background: 'radial-gradient(at 30% 0%, #efeaf8 0%, #e8e7ee 60%, #ddd9e6 100%)' }}
         >
-          <div className="absolute inset-0 flex items-center justify-center p-8">
+          <div className="absolute inset-0 flex items-center justify-center p-8 overflow-auto">
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center gap-2 text-[11px] text-ink-500 bg-white/70 backdrop-blur px-2.5 py-1 rounded-full border border-white">
                 <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
                 {scenario.label} · {scenario.sublabel}
               </div>
 
-              <CanvasFrame scenario={scenario} applied={applied} />
+              {compareMode ? (
+                <CompareView
+                  scenario={scenario}
+                  loading={loading}
+                  onPick={pickFromCompare}
+                  onCancel={cancelCompare}
+                />
+              ) : (
+                <>
+                  <CanvasFrame scenario={scenario} applied={applied} />
 
-              {applied !== 'original' && (
-                <button
-                  onClick={undo}
-                  className="animate-slideup mt-1 inline-flex items-center gap-2 px-3 h-9 rounded-full bg-white shadow-soft border border-ink-100 text-[12px] text-ink-800 hover:bg-ink-50"
-                >
-                  <Undo size={14} /> {COPY.undo}
-                </button>
+                  {applied !== 'original' && (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setCompareMode(true)}
+                          className="animate-slideup inline-flex items-center gap-2 px-3 h-9 rounded-full bg-white shadow-soft border border-ink-100 text-[12px] text-ink-800 hover:bg-ink-50"
+                        >
+                          <Sparkle size={14} className="text-brand-600" /> See both versions
+                        </button>
+                        <button
+                          onClick={undo}
+                          className="animate-slideup inline-flex items-center gap-2 px-3 h-9 rounded-full bg-white shadow-soft border border-ink-100 text-[12px] text-ink-800 hover:bg-ink-50"
+                        >
+                          <Undo size={14} /> {COPY.undo}
+                        </button>
+                      </div>
+                      <FeedbackBar />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1557,21 +1689,10 @@ function App() {
 
           {ripple && <SparkleRipple key={ripple.key} x={ripple.x} y={ripple.y} />}
 
-          {entryPos && !panelOpen && (
+          {entryPos && !compareMode && (
             <EntryPill x={entryPos.x} y={entryPos.y} label={t.entryPillCopy} accent={t.accent}
-                       onOpen={openPanel} onDismiss={dismissEntry} />
+                       onOpen={openCompare} onDismiss={dismissEntry} />
           )}
-
-          <SidePanel
-            open={panelOpen}
-            scenario={scenario}
-            applied={applied}
-            loading={loading}
-            title={t.panelTitle}
-            subtitle={t.panelSubtitle}
-            onApply={applyVariation}
-            onClose={closePanel}
-          />
         </div>
 
         <RightPanel />
@@ -1601,12 +1722,6 @@ function App() {
 
       <TweaksPanel title="Tweaks">
         <TweakSection label="Beautified screen" />
-        <TweakRadio
-          label="After 'Try a beautified version'"
-          value={t.autoApply}
-          options={['v1', 'v2', 'none']}
-          onChange={(v) => setTweak('autoApply', v)}
-        />
         <TweakSlider
           label="Skeleton delay"
           value={t.skeletonMs} min={0} max={3000} step={100} unit="ms"
